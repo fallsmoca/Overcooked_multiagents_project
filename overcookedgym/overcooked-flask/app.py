@@ -3,7 +3,6 @@ import io
 import json
 import copy
 import argparse
-import torch
 import numpy as np
 import gym
 
@@ -19,11 +18,12 @@ app = Flask(__name__)
 
 
 def get_prediction(s, policy, layout_name, algo):
-    s = torch.tensor(s).unsqueeze(0).float()
-    # print(s.size())
-    actions, states = policy.predict(observation=s)
-    # print(actions)
-    return int(actions[0])
+    observation = np.asarray(s, dtype=np.float32)
+    action, _ = policy.predict(
+        observation=observation,
+        deterministic=ARGS.deterministic,
+    )
+    return int(np.asarray(action).item())
 
 
 def process_state(state_dict, layout_name):
@@ -39,14 +39,14 @@ def process_state(state_dict, layout_name):
     def state_from_dict(state_dict):
         state_dict["players"] = [player_from_dict(
             p) for p in state_dict["players"]]
-        object_list = [object_from_dict(o)
-                       for _, o in state_dict["objects"].items()]
+        serialized_objects = state_dict["objects"]
+        if isinstance(serialized_objects, dict):
+            serialized_objects = serialized_objects.values()
+        object_list = [object_from_dict(o) for o in serialized_objects]
         state_dict["objects"] = {ob.position: ob for ob in object_list}
         return OvercookedState(**state_dict)
 
     state = state_from_dict(copy.deepcopy(state_dict))
-    print(state.to_dict())
-
     return MDP.featurize_state(state, MLP)
 
 
@@ -98,10 +98,6 @@ def predict():
         layout_name = NAME_TRANSLATION[server_layout_name]
         s0, s1 = process_state(state_dict, layout_name)
 
-        # print(s0.to_dict())
-        # print(s1.to_dict())
-        print("---\n")
-
         if ARGS.replay_traj:
             if player_id == 0:
                 a = int(EGO_TRANSITIONS.acts[timestep][0]) if timestep < len(
@@ -120,9 +116,6 @@ def predict():
                 assert(False)
             a = get_prediction(s, policy, layout_name, algo)
 
-        print(a)
-        # print(algo)
-        print("sending action ", a)
         return jsonify({'action': a})
 
 
@@ -159,6 +152,15 @@ def root():
     return app.send_static_file('index.html')
 
 
+@app.route('/health')
+def health():
+    return jsonify({
+        'status': 'ok',
+        'layout': ARGS.layout_name,
+        'deterministic': ARGS.deterministic,
+    })
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -172,6 +174,12 @@ if __name__ == '__main__':
                         required=True, help="layout name")
     parser.add_argument('--trajs_savepath', type=str,
                         help="path to save trajectories")
+    parser.add_argument('--port', type=int, default=5000,
+                        help="port for the web visualizer")
+    parser.add_argument('--stochastic', action='store_false',
+                        dest='deterministic',
+                        help="sample actions instead of using argmax actions")
+    parser.set_defaults(deterministic=True)
     ARGS = parser.parse_args()
 
     if ARGS.replay_traj:
@@ -195,4 +203,4 @@ if __name__ == '__main__':
     MLP = MediumLevelPlanner.from_pickle_or_compute(
         MDP, NO_COUNTERS_PARAMS, force_compute=False)
 
-    app.run(debug=True, host='0.0.0.0')
+    app.run(debug=False, use_reloader=False, host='0.0.0.0', port=ARGS.port)

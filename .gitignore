@@ -9,5 +9,6 @@ logs/
 *.ipynb_checkpoints*
 trajs/
 models/
+runs/
 .idea/
 .mypy_cache/

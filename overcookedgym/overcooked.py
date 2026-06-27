@@ -8,7 +8,8 @@ from overcooked_ai_py.planning.planners import MediumLevelPlanner, NO_COUNTERS_P
 from pantheonrl.common.multiagentenv import SimultaneousEnv
 
 class OvercookedMultiEnv(SimultaneousEnv):
-    def __init__(self, layout_name, ego_agent_idx=0, baselines=False):
+    def __init__(self, layout_name, ego_agent_idx=0, baselines=False,
+                 reward_shaping=None, horizon=400):
         """
         base_env: OvercookedEnv
         featurize_fn: what function is used to featurize states returned in the 'both_agent_obs' field
@@ -16,7 +17,7 @@ class OvercookedMultiEnv(SimultaneousEnv):
         super(OvercookedMultiEnv, self).__init__()
 
         DEFAULT_ENV_PARAMS = {
-            "horizon": 400
+            "horizon": horizon
         }
         rew_shaping_params = {
             "PLACEMENT_IN_POT_REW": 3,
@@ -26,6 +27,9 @@ class OvercookedMultiEnv(SimultaneousEnv):
             "POT_DISTANCE_REW": 0,
             "SOUP_DISTANCE_REW": 0,
         }
+        if reward_shaping is not None:
+            rew_shaping_params.update(reward_shaping)
+        self.reward_shaping_params = rew_shaping_params
 
         self.mdp = OvercookedGridworld.from_layout_name(layout_name=layout_name, rew_shaping_params=rew_shaping_params)
         mlp = MediumLevelPlanner.from_pickle_or_compute(self.mdp, NO_COUNTERS_PARAMS, force_compute=False)
@@ -64,11 +68,11 @@ class OvercookedMultiEnv(SimultaneousEnv):
         else:
             joint_action = (alt_action, ego_action)
 
-        next_state, reward, done, info = self.base_env.step(joint_action)
+        next_state, sparse_reward, done, info = self.base_env.step(joint_action)
 
         # reward shaping
         rew_shape = info['shaped_r']
-        reward = reward + rew_shape
+        reward = sparse_reward + rew_shape
 
         #print(self.base_env.mdp.state_string(next_state))
         ob_p0, ob_p1 = self.featurize_fn(next_state)
@@ -77,7 +81,11 @@ class OvercookedMultiEnv(SimultaneousEnv):
         else:
             ego_obs, alt_obs = ob_p1, ob_p0
 
-        return (ego_obs, alt_obs), (reward, reward), done, {}#info
+        info = dict(info)
+        info['sparse_reward'] = sparse_reward
+        info['shaped_reward'] = rew_shape
+        info['total_reward'] = reward
+        return (ego_obs, alt_obs), (reward, reward), done, info
 
     def multi_reset(self):
         """

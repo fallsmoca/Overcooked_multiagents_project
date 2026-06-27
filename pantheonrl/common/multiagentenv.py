@@ -81,6 +81,14 @@ class MultiAgentEnv(gym.Env, ABC):
     def set_ego_extractor(self, ego_extractor: Callable[[Observation], Any]):
         self.ego_extractor = ego_extractor
 
+    def seed(self, seed: Optional[int] = None):
+        np.random.seed(seed)
+        if hasattr(self, "action_space"):
+            self.action_space.seed(seed)
+        if hasattr(self, "observation_space"):
+            self.observation_space.seed(seed)
+        return [seed]
+
     def _get_partner_num(self, player_num: int) -> int:
         if player_num == self.ego_ind:
             raise PlayerException(

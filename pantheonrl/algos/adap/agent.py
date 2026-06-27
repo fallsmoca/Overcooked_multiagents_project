@@ -77,7 +77,7 @@ class AdapAgent(OnPolicyAgent):
         if record and self.n_steps >= self.model.n_steps:
             buf.compute_returns_and_advantage(
                 last_values=self.values,
-                dones=self._last_episode_starts[0]
+                dones=np.asarray(self._last_episode_starts, dtype=bool)
             )
 
             if self.log_interval is not None and \
